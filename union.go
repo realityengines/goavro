@@ -53,12 +53,16 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 	codecFromName := make(map[string]*Codec, len(schemaArray))
 	indexFromName := make(map[string]int, len(schemaArray))
 
+	nullIndex := -1
 	for i, unionMemberSchema := range schemaArray {
 		unionMemberCodec, err := buildCodec(st, enclosingNamespace, unionMemberSchema)
 		if err != nil {
 			return nil, fmt.Errorf("Union item %d ought to be valid Avro type: %s", i+1, err)
 		}
 		fullName := unionMemberCodec.typeName.fullName
+		if fullName == "null" {
+			nullIndex = i
+		}
 		if _, ok := indexFromName[fullName]; ok {
 			return nil, fmt.Errorf("Union item %d ought to be unique type: %s", i+1, unionMemberCodec.typeName)
 		}
@@ -68,13 +72,48 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 		indexFromName[fullName] = i
 	}
 
+	isOptional := (nullIndex > -1) && (len(schemaArray) == 2)
+
+	writeBinaryDatum := func(buf []byte, index int, datum interface{}) ([]byte, error) {
+		c := codecFromIndex[index]
+		buf, _ = longBinaryFromNative(buf, index)
+		return c.binaryFromNative(buf, datum)
+	}
+
+	writeTextDatum := func(buf []byte, index int, key string, datum interface{}) ([]byte, error) {
+		buf = append(buf, '{')
+		var err error
+		buf, err = stringTextualFromNative(buf, key)
+		if err != nil {
+			return nil, fmt.Errorf("cannot encode textual union: %s", err)
+		}
+		buf = append(buf, ':')
+		c := codecFromIndex[index]
+		buf, err = c.textualFromNative(buf, datum)
+		if err != nil {
+			return nil, fmt.Errorf("cannot encode textual union: %s", err)
+		}
+		return append(buf, '}'), nil
+	}
+
 	return &Codec{
 		// NOTE: To support record field default values, union schema set to the
 		// type name of first member
 		// TODO: add/change to schemaCanonical below
 		schemaOriginal: codecFromIndex[0].typeName.fullName,
+		typeName:       &name{"union", nullNamespace},
 
-		typeName: &name{"union", nullNamespace},
+		wrapDefault: func(defaultValue interface{}) (interface{}, error) {
+			if isOptional {
+				if (defaultValue == nil && nullIndex == 1) ||
+					(defaultValue != nil && nullIndex == 0) {
+					return nil, fmt.Errorf("default value ought to encode using first union type")
+				}
+				return defaultValue, nil
+			}
+			return Union(codecFromIndex[0].typeName.fullName, defaultValue), nil
+		},
+
 		nativeFromBinary: func(buf []byte) (interface{}, []byte, error) {
 			var decoded interface{}
 			var err error
@@ -92,21 +131,22 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 			if err != nil {
 				return nil, nil, fmt.Errorf("cannot decode binary union item %d: %s", index+1, err)
 			}
-			if decoded == nil {
+			if decoded == nil || isOptional {
 				// do not wrap a nil value in a map
-				return nil, buf, nil
+				return decoded, buf, nil
 			}
-			// Non-nil values are wrapped in a map with single key set to type name of value
 			return Union(allowedTypes[index], decoded), buf, nil
 		},
 		binaryFromNative: func(buf []byte, datum interface{}) ([]byte, error) {
+			if isOptional && datum != nil {
+				return writeBinaryDatum(buf, 1-nullIndex, datum)
+			}
 			switch v := datum.(type) {
 			case nil:
-				index, ok := indexFromName["null"]
-				if !ok {
+				if nullIndex == -1 {
 					return nil, fmt.Errorf("cannot encode binary union: no member schema types support datum: allowed types: %v; received: %T", allowedTypes, datum)
 				}
-				return longBinaryFromNative(buf, index)
+				return longBinaryFromNative(buf, nullIndex)
 			case map[string]interface{}:
 				if len(v) != 1 {
 					return nil, fmt.Errorf("cannot encode binary union: non-nil Union values ought to be specified with Go map[string]interface{}, with single key equal to type name, and value equal to datum value: %v; received: %T", allowedTypes, datum)
@@ -117,9 +157,7 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 					if !ok {
 						return nil, fmt.Errorf("cannot encode binary union: no member schema types support datum: allowed types: %v; received: %T", allowedTypes, datum)
 					}
-					c := codecFromIndex[index]
-					buf, _ = longBinaryFromNative(buf, index)
-					return c.binaryFromNative(buf, value)
+					return writeBinaryDatum(buf, index, value)
 				}
 			}
 			return nil, fmt.Errorf("cannot encode binary union: non-nil Union values ought to be specified with Go map[string]interface{}, with single key equal to type name, and value equal to datum value: %v; received: %T", allowedTypes, datum)
@@ -134,6 +172,14 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 			var datum interface{}
 			var err error
 			datum, buf, err = genericMapTextDecoder(buf, nil, codecFromName)
+			if isOptional && datum != nil {
+				index := 1 - nullIndex
+				if wrapper, ok := datum.(map[string]interface{}); !ok || len(wrapper) != 1 {
+					err = fmt.Errorf("expected a map with exactly one element")
+				} else if datum, ok = wrapper[allowedTypes[index]]; !ok {
+					err = fmt.Errorf("expected %s in union map", allowedTypes[index])
+				}
+			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("cannot decode textual union: %s", err)
 			}
@@ -141,6 +187,10 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 			return datum, buf, nil
 		},
 		textualFromNative: func(buf []byte, datum interface{}) ([]byte, error) {
+			if isOptional && datum != nil {
+				index := 1 - nullIndex
+				return writeTextDatum(buf, index, allowedTypes[index], datum)
+			}
 			switch v := datum.(type) {
 			case nil:
 				_, ok := indexFromName["null"]
@@ -158,19 +208,7 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 					if !ok {
 						return nil, fmt.Errorf("cannot encode textual union: no member schema types support datum: allowed types: %v; received: %T", allowedTypes, datum)
 					}
-					buf = append(buf, '{')
-					var err error
-					buf, err = stringTextualFromNative(buf, key)
-					if err != nil {
-						return nil, fmt.Errorf("cannot encode textual union: %s", err)
-					}
-					buf = append(buf, ':')
-					c := codecFromIndex[index]
-					buf, err = c.textualFromNative(buf, value)
-					if err != nil {
-						return nil, fmt.Errorf("cannot encode textual union: %s", err)
-					}
-					return append(buf, '}'), nil
+					return writeTextDatum(buf, index, key, value)
 				}
 			}
 			return nil, fmt.Errorf("cannot encode textual union: non-nil values ought to be specified with Go map[string]interface{}, with single key equal to type name, and value equal to datum value: %v; received: %T", allowedTypes, datum)

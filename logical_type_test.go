@@ -43,8 +43,9 @@ func TestTimeStampMillisLogicalTypeEncode(t *testing.T) {
 
 func TestTimeStampMillisLogicalTypeUnionEncode(t *testing.T) {
 	schema := `{"type": ["null", {"type": "long", "logicalType": "timestamp-millis"}]}`
-	testBinaryEncodeFail(t, schema, Union("string", "test"), "cannot encode binary union: no member schema types support datum: allowed types: [null long.timestamp-millis]")
-	testBinaryCodecPass(t, schema, Union("long.timestamp-millis", time.Date(2006, 1, 2, 15, 04, 05, 565000000, time.UTC)), []byte("\x02\xfa\x82\xac\xba\x91\x42"))
+	testBinaryEncodeFail(t, schema, "test", "cannot transform binary timestamp-millis, expected time.Time, received string")
+	testBinaryCodecPass(t, schema, nil, []byte("\x00"))
+	testBinaryCodecPass(t, schema, time.Date(2006, 1, 2, 15, 04, 05, 565000000, time.UTC), []byte("\x02\xfa\x82\xac\xba\x91\x42"))
 }
 
 func TestTimeStampMicrosLogicalTypeEncode(t *testing.T) {
@@ -56,8 +57,8 @@ func TestTimeStampMicrosLogicalTypeEncode(t *testing.T) {
 
 func TestTimeStampMicrosLogicalTypeUnionEncode(t *testing.T) {
 	schema := `{"type": ["null", {"type": "long", "logicalType": "timestamp-micros"}]}`
-	testBinaryEncodeFail(t, schema, Union("string", "test"), "cannot encode binary union: no member schema types support datum: allowed types: [null long.timestamp-micros]")
-	testBinaryCodecPass(t, schema, Union("long.timestamp-micros", time.Date(2006, 1, 2, 15, 04, 05, 565283000, time.UTC)), []byte("\x02\xc6\x8d\xf7\xe7\xaf\xd8\x84\x04"))
+	testBinaryEncodeFail(t, schema, "test", "cannot transform binary timestamp-micros, expected time.Time, received string")
+	testBinaryCodecPass(t, schema, time.Date(2006, 1, 2, 15, 04, 05, 565283000, time.UTC), []byte("\x02\xc6\x8d\xf7\xe7\xaf\xd8\x84\x04"))
 }
 
 func TestTimeMillisLogicalTypeEncode(t *testing.T) {
@@ -69,8 +70,8 @@ func TestTimeMillisLogicalTypeEncode(t *testing.T) {
 
 func TestTimeMillisLogicalTypeUnionEncode(t *testing.T) {
 	schema := `{"type": ["null", {"type": "int", "logicalType": "time-millis"}]}`
-	testBinaryEncodeFail(t, schema, Union("string", "test"), "cannot encode binary union: no member schema types support datum: allowed types: [null int.time-millis]")
-	testBinaryCodecPass(t, schema, Union("int.time-millis", 66904022*time.Millisecond), []byte("\x02\xac\xff\xe6\x3f"))
+	testBinaryEncodeFail(t, schema, "test", "cannot transform to binary time-millis, expected time.Duration, received string")
+	testBinaryCodecPass(t, schema, 66904022*time.Millisecond, []byte("\x02\xac\xff\xe6\x3f"))
 }
 
 func TestTimeMicrosLogicalTypeEncode(t *testing.T) {
@@ -82,8 +83,8 @@ func TestTimeMicrosLogicalTypeEncode(t *testing.T) {
 
 func TestTimeMicrosLogicalTypeUnionEncode(t *testing.T) {
 	schema := `{"type": ["null", {"type": "long", "logicalType": "time-micros"}]}`
-	testBinaryEncodeFail(t, schema, Union("string", "test"), "cannot encode binary union: no member schema types support datum: allowed types: [null long.time-micros]")
-	testBinaryCodecPass(t, schema, Union("long.time-micros", 66904022566*time.Microsecond), []byte("\x02\xcc\xf8\xd2\xbc\xf2\x03"))
+	testBinaryEncodeFail(t, schema, "test", "cannot transform to binary time-micros, expected time.Duration, received string")
+	testBinaryCodecPass(t, schema, 66904022566*time.Microsecond, []byte("\x02\xcc\xf8\xd2\xbc\xf2\x03"))
 }
 func TestDateLogicalTypeEncode(t *testing.T) {
 	schema := `{"type": "int", "logicalType": "date"}`
@@ -132,7 +133,7 @@ func ExampleUnion_logicalType() {
 
 	// Note the usage of type.logicalType i.e. `long.timestamp-millis` to denote the type in a union. This is due to the single string naming format
 	// used by goavro. Decimal can be both bytes.decimal or fixed.decimal
-	bytes, err := codec.BinaryFromNative(nil, map[string]interface{}{"long.timestamp-millis": time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC)})
+	bytes, err := codec.BinaryFromNative(nil, time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC))
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -141,7 +142,6 @@ func ExampleUnion_logicalType() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	out := decoded.(map[string]interface{})
-	fmt.Printf("%#v\n", out["long.timestamp-millis"].(time.Time).String())
+	fmt.Printf("%#v\n", decoded.(time.Time).String())
 	// Output: "2006-01-02 15:04:05 +0000 UTC"
 }

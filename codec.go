@@ -52,6 +52,8 @@ type Codec struct {
 	schemaCanonical string
 	typeName        *name
 
+	wrapDefault func(interface{}) (interface{}, error)
+
 	nativeFromTextual func([]byte) (interface{}, []byte, error)
 	binaryFromNative  func([]byte, interface{}) ([]byte, error)
 	nativeFromBinary  func([]byte) (interface{}, []byte, error)

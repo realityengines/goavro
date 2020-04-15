@@ -27,11 +27,8 @@ func TestUnion(t *testing.T) {
 	testBinaryCodecPass(t, `["null","int"]`, Union("null", nil), []byte("\x00"))
 	testBinaryCodecPass(t, `["int","null"]`, Union("null", nil), []byte("\x02"))
 
-	testBinaryCodecPass(t, `["null","int"]`, Union("int", 3), []byte("\x02\x06"))
-	testBinaryCodecPass(t, `["null","long"]`, Union("long", 3), []byte("\x02\x06"))
-
-	testBinaryCodecPass(t, `["int","null"]`, Union("int", 3), []byte("\x00\x06"))
-	testBinaryEncodePass(t, `["int","null"]`, Union("int", 3), []byte("\x00\x06")) // can encode a bare 3
+	testBinaryCodecPass(t, `["null","int"]`, 3, []byte("\x02\x06"))
+	testBinaryCodecPass(t, `["null","long"]`, 3, []byte("\x02\x06"))
 
 	testBinaryEncodeFail(t, `[{"type":"enum","name":"colors","symbols":["red","green","blue"]},{"type":"enum","name":"animals","symbols":["dog","cat"]}]`, Union("colors", "bravo"), "value ought to be member of symbols")
 	testBinaryEncodeFail(t, `[{"type":"enum","name":"colors","symbols":["red","green","blue"]},{"type":"enum","name":"animals","symbols":["dog","cat"]}]`, Union("animals", "bravo"), "value ought to be member of symbols")
@@ -40,9 +37,8 @@ func TestUnion(t *testing.T) {
 }
 
 func TestUnionRejectInvalidType(t *testing.T) {
-	testBinaryEncodeFailBadDatumType(t, `["null","long"]`, 3)
+	testBinaryEncodeFailBadDatumType(t, `["null","long"]`, Union("long", 3))
 	testBinaryEncodeFailBadDatumType(t, `["null","int","long","float"]`, float64(3.5))
-	testBinaryEncodeFailBadDatumType(t, `["null","long"]`, Union("int", 3))
 	testBinaryEncodeFailBadDatumType(t, `["null","int","long","float"]`, Union("double", float64(3.5)))
 }
 
@@ -58,19 +54,19 @@ func TestUnionNumericCoercionGuardsPrecision(t *testing.T) {
 }
 
 func TestUnionWithArray(t *testing.T) {
-	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, Union("null", nil), []byte("\x00"))
+	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, nil, []byte("\x00"))
 
-	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, Union("array", []interface{}{}), []byte("\x02\x00"))
-	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, Union("array", []interface{}{1}), []byte("\x02\x02\x02\x00"))
-	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, Union("array", []interface{}{1, 2}), []byte("\x02\x04\x02\x04\x00"))
+	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, []interface{}{}, []byte("\x02\x00"))
+	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, []interface{}{1}, []byte("\x02\x02\x02\x00"))
+	testBinaryCodecPass(t, `["null",{"type":"array","items":"int"}]`, []interface{}{1, 2}, []byte("\x02\x04\x02\x04\x00"))
 
-	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, Union("null", nil), []byte{2})
-	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, Union("array", []string{"foo"}), []byte("\x00\x02\x06foo\x00"))
-	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, Union("array", []string{"foo", "bar"}), []byte("\x00\x04\x06foo\x06bar\x00"))
+	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, nil, []byte{2})
+	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, []string{"foo"}, []byte("\x00\x02\x06foo\x00"))
+	testBinaryCodecPass(t, `[{"type": "array", "items": "string"}, "null"]`, []string{"foo", "bar"}, []byte("\x00\x04\x06foo\x06bar\x00"))
 }
 
 func TestUnionWithMap(t *testing.T) {
-	testBinaryCodecPass(t, `["null",{"type":"map","values":"string"}]`, Union("null", nil), []byte("\x00"))
+	testBinaryCodecPass(t, `["null",{"type":"map","values":"string"}]`, nil, []byte("\x00"))
 	testBinaryCodecPass(t, `["string",{"type":"map","values":"string"}]`, Union("map", map[string]interface{}{"He": "Helium"}), []byte("\x02\x02\x04He\x0cHelium\x00"))
 	testBinaryCodecPass(t, `["string",{"type":"array","items":"string"}]`, Union("string", "Helium"), []byte("\x00\x0cHelium"))
 }
@@ -145,17 +141,16 @@ func TestUnionRecordFieldWhenNull(t *testing.T) {
   ]
 }`
 
-	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": Union("array", []interface{}{})}, []byte("\x00\x00"))
-	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": Union("array", []string{"bar"})}, []byte("\x00\x02\x06bar\x00"))
-	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": Union("array", []string{})}, []byte("\x00\x00"))
-	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": Union("null", nil)}, []byte("\x02"))
+	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": []interface{}{}}, []byte("\x00\x00"))
+	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": []string{"bar"}}, []byte("\x00\x02\x06bar\x00"))
+	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": []string{}}, []byte("\x00\x00"))
 	testBinaryCodecPass(t, schema, map[string]interface{}{"f1": nil}, []byte("\x02"))
 }
 
 func TestUnionText(t *testing.T) {
 	testTextEncodeFail(t, `["null","int"]`, Union("null", 3), "expected")
-	testTextCodecPass(t, `["null","int"]`, Union("null", nil), []byte("null"))
-	testTextCodecPass(t, `["null","int"]`, Union("int", 3), []byte(`{"int":3}`))
+	testTextCodecPass(t, `["null","int"]`, nil, []byte("null"))
+	testTextCodecPass(t, `["null","int"]`, 3, []byte(`{"int":3}`))
 	testTextCodecPass(t, `["null","int","string"]`, Union("string", "😂 "), []byte(`{"string":"\u0001\uD83D\uDE02 "}`))
 }
 

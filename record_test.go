@@ -400,10 +400,10 @@ func TestRecordFieldUnionDefaultValue(t *testing.T) {
 func TestRecordFieldUnionInvalidDefaultValue(t *testing.T) {
 	testSchemaInvalid(t,
 		`{"type":"record","name":"r1","fields":[{"name":"f1","type":["null","int"],"default":13}]}`,
-		"default value ought to encode using field schema")
+		"default value ought to encode using first union type")
 	testSchemaInvalid(t,
 		`{"type":"record","name":"r1","fields":[{"name":"f1","type":["int","null"],"default":null}]}`,
-		"default value ought to encode using field schema")
+		"default value ought to encode using first union type")
 }
 
 func TestRecordRecursiveRoundTrip(t *testing.T) {
@@ -509,12 +509,8 @@ func ExampleBinaryFromNative() {
 	// Convert native Go form to binary Avro data
 	binary, err := codec.BinaryFromNative(nil, map[string]interface{}{
 		"next": map[string]interface{}{
-			"LongList": map[string]interface{}{
-				"next": map[string]interface{}{
-					"LongList": map[string]interface{}{
-						// NOTE: May omit fields when using default value
-					},
-				},
+			"next": map[string]interface{}{
+				// NOTE: May omit fields when using default value
 			},
 		},
 	})
@@ -549,7 +545,7 @@ func ExampleNativeFromBinary() {
 	}
 
 	fmt.Printf("%v", native)
-	// Output: map[next:map[LongList:map[next:map[LongList:map[next:<nil>]]]]]
+	// Output: map[next:map[next:map[next:<nil>]]]
 }
 
 func ExampleNativeFromTextual() {
@@ -575,7 +571,7 @@ func ExampleNativeFromTextual() {
 	}
 
 	fmt.Printf("%v", native)
-	// Output: map[next:map[LongList:map[next:map[LongList:map[next:<nil>]]]]]
+	// Output: map[next:map[next:map[next:<nil>]]]
 }
 
 func ExampleTextualFromNative() {
@@ -595,12 +591,8 @@ func ExampleTextualFromNative() {
 	// Convert native Go form to text Avro data
 	text, err := codec.TextualFromNative(nil, map[string]interface{}{
 		"next": map[string]interface{}{
-			"LongList": map[string]interface{}{
 				"next": map[string]interface{}{
-					"LongList": map[string]interface{}{
-						// NOTE: May omit fields when using default value
-					},
-				},
+				// NOTE: May omit fields when using default value
 			},
 		},
 	})

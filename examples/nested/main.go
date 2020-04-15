@@ -6,7 +6,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/linkedin/goavro/v2"
+	"github.com/realityengines/goavro"
 )
 
 var (
@@ -42,12 +42,18 @@ func main() {
 	}
 
 	fmt.Printf("user in=%+v\n", user)
-
+	fmt.Printf("address in=%+v\n", user.Address)
 	///Convert Binary From Native
 	binary, err := codec.BinaryFromNative(nil, user.ToStringMap())
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("Textual")
+	text, err := codec.TextualFromNative(nil, user.ToStringMap())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(text))
 
 	///Convert Native from Binary
 	native, _, err := codec.NativeFromBinary(binary)
@@ -58,6 +64,7 @@ func main() {
 	//Convert it back tp Native
 	userOut := StringMapToUser(native.(map[string]interface{}))
 	fmt.Printf("user out=%+v\n", userOut)
+	fmt.Printf("address out=%+v\n", userOut.Address)
 	if ok := reflect.DeepEqual(user, userOut); !ok {
 		fmt.Fprintf(os.Stderr, "struct Compare Failed ok=%t\n", ok)
 		os.Exit(1)
@@ -89,9 +96,9 @@ func (u *User) ToStringMap() map[string]interface{} {
 	}
 
 	if len(u.Errors) > 0 {
-		datumIn["Errors"] = goavro.Union("array", u.Errors)
+		datumIn["Errors"] = u.Errors
 	} else {
-		datumIn["Errors"] = goavro.Union("null", nil)
+		datumIn["Errors"] = nil
 	}
 
 	if u.Address != nil {
@@ -102,16 +109,16 @@ func (u *User) ToStringMap() map[string]interface{} {
 			"Zip":      int(u.Address.Zip),
 		}
 		if u.Address.Address2 != "" {
-			addDatum["Address2"] = goavro.Union("string", u.Address.Address2)
+			addDatum["Address2"] = u.Address.Address2
 		} else {
-			addDatum["Address2"] = goavro.Union("null", nil)
+			addDatum["Address2"] = nil
 		}
 
 		//important need namespace and record name
-		datumIn["Address"] = goavro.Union("my.namespace.com.address", addDatum)
+		datumIn["Address"] = addDatum
 
 	} else {
-		datumIn["Address"] = goavro.Union("null", nil)
+		datumIn["Address"] = nil
 	}
 	return datumIn
 }
@@ -131,38 +138,37 @@ func StringMapToUser(data map[string]interface{}) *User {
 				ind.LastName = value
 			}
 		case "Errors":
-			if value, ok := v.(map[string]interface{}); ok {
-				for _, item := range value["array"].([]interface{}) {
+			if value, ok := v.([]interface{}); ok {
+				for _, item := range value {
 					ind.Errors = append(ind.Errors, item.(string))
 				}
 			}
 		case "Address":
-			if vmap, ok := v.(map[string]interface{}); ok {
-				//important need namespace and record name
-				if cookieSMap, ok := vmap["my.namespace.com.address"].(map[string]interface{}); ok {
-					add := &Address{}
-					for k, v := range cookieSMap {
-						switch k {
-						case "Address1":
-							if value, ok := v.(string); ok {
-								add.Address1 = value
-							}
-						case "Address2":
-							if value, ok := v.(string); ok {
-								add.Address2 = value
-							}
-						case "City":
-							if value, ok := v.(string); ok {
-								add.City = value
-							}
-						case "Zip":
-							if value, ok := v.(int); ok {
-								add.Zip = value
-							}
+			if cookieSMap, ok := v.(map[string]interface{}); ok {
+				add := &Address{}
+				for k, v := range cookieSMap {
+					switch k {
+					case "Address1":
+						if value, ok := v.(string); ok {
+							add.Address1 = value
 						}
+					case "Address2":
+						if value, ok := v.(string); ok {
+							add.Address2 = value
+						}
+					case "City":
+						if value, ok := v.(string); ok {
+							add.City = value
+						}
+					case "State":
+						if value, ok := v.(string); ok {
+							add.State = value
+						}
+					case "Zip":
+						add.Zip = int(v.(int32))
 					}
-					ind.Address = add
 				}
+				ind.Address = add
 			}
 		}
 
